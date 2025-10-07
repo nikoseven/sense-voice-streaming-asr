@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sense-voice-streaming-asr"
+version = "0.1.0"
+description = "Streaming speech recongnition supporting zh, en, yue, ja, and ko with SenseVoiceSmall."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "nikoseven", email = "nikoseven@outlook.com"}]
+
+dependencies = [
+    "numpy",
+    "kaldi_native_fbank",
+    "sounddevice",
+    "sentencepiece",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sense_voice_streaming_asr = [
+    "models/SenseVoiceSmall/*",
+    "models/speech_fsmn_vad_zh-cn-16k-common-onnx/*"
+]
