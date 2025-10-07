@@ -1,0 +1,6 @@
+[submodule "src/sense_voice_streaming_asr/models/speech_fsmn_vad_zh-cn-16k-common-onnx"]
+	path = src/sense_voice_streaming_asr/models/speech_fsmn_vad_zh-cn-16k-common-onnx
+	url = https://www.modelscope.cn/iic/speech_fsmn_vad_zh-cn-16k-common-onnx.git
+[submodule "src/sense_voice_streaming_asr/models/SenseVoiceSmall"]
+	path = src/sense_voice_streaming_asr/models/SenseVoiceSmall
+	url = https://www.modelscope.cn/iic/SenseVoiceSmall-onnx.git
