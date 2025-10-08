@@ -1,10 +1,13 @@
 import logging
-import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
 from typing import Optional, Callable
-import kaldi_native_fbank as knf
 from dataclasses import dataclass
 from enum import Enum
+
+import numpy as np
+from numpy.typing import NDArray
+from numpy.lib.stride_tricks import sliding_window_view
+
+import kaldi_native_fbank as knf
 
 
 from .cmvn_utils import apply_cmvn
@@ -12,11 +15,11 @@ from .model_data import SenseVoiceModel, VadModel
 from .rolling_buffer import RollingBuffer
 
 
-@dataclass
 class ASRState:
     start_frame_idx: Optional[int] = None
-    last_decoded_text: str = ""
     last_processed_frame: int = -1
+    last_ctc_token_ids: NDArray[np.int32] = np.array([])
+    last_immutable_ctc_token_idx: int = -1
 
     def is_speech_active(self) -> bool:
         return self.start_frame_idx is not None
@@ -26,8 +29,9 @@ class ASRState:
 
     def end_speech(self):
         self.start_frame_idx = None
-        self.last_decoded_text = ""
         self.last_processed_frame = -1
+        self.last_ctc_token_ids = np.array([])
+        self.last_immutable_ctc_token_idx = -1
 
 
 class StreamingASREventType(str, Enum):
@@ -54,10 +58,11 @@ class StreamingASRConfig:
 
     Attributes:
         lang: Language code "zh", "en", "yue", "ja", "ko" or 'auto' for auto-detection. Default: 'auto'.
-        itn_min_length: Minimum character length of previous result to enable ITN for next recognition.
-                             If set to 0, ITN is always enabled.
-                             If set to -1, ITN is always disabled.
-                             If set to positive value, ITN is enabled when previous result length >= this value. Default: -1.
+        itn_min_speech_time_ms: Minimum speech duration in milliseconds to enable ITN.
+                                Prevents punctuation from being added to very short utterances (e.g., single words),
+                                If set to 0, ITN is always enabled.
+                                If set to -1, ITN is always disabled.
+                                If set to positive value, ITN is enabled when speech duration >= this value. Default: 2000.
         vad_start_threshold: VAD threshold to start speech (range: 0–1). Default: 0.7.
         vad_end_threshold: VAD threshold to end speech (should be < start threshold). Default: 0.3.
         vad_start_persistence_ms: Min ms above start threshold to trigger speech start. Default: 200.
@@ -69,10 +74,10 @@ class StreamingASRConfig:
     """
 
     lang: str = "auto"
-    itn_min_length: int = (
-        10  # -1: no ITN; 0, ITN; >0: enable ITN if result length exceeded
+    itn_min_speech_time_ms: int = (
+        2000  # -1: no ITN; 0, ITN; >0: enable ITN if speech duration exceeded
     )
-    vad_start_threshold: float = 0.6
+    vad_start_threshold: float = 0.7
     vad_end_threshold: float = 0.3
     vad_start_persistence_ms: int = 100
     vad_end_persistence_ms: int = 500
@@ -80,17 +85,21 @@ class StreamingASRConfig:
     buffer_duration_sec: int = 600
     asr_result_trigger_buffer_ms: int = 1000
     asr_result_update_interval_ms: int = 500
+    asr_mutable_suffix_token_num: int = 30  # 1 token == 60ms
 
 
 def _range_lfr(
     buf: RollingBuffer, a: int, b: int, lfr_m: int, lfr_n: int
 ) -> np.ndarray:
     """
-    Compute LFR features for the buffer segment [a, b].
+    Compute LFR features for the buffer segment [a, b).
+
+    Each output frame k is centered at original frame (a + k * lfr_n) and uses
+    buffer frames in the half-open interval [center - lfr_m//2, center + lfr_m//2 + 1).
 
     :param lfr_m: Window size, i.e., the number of frames concatenated per output frame.
     :param lfr_n: Step size, i.e., the number of frames to skip between output frames.
-    :return: LFR features
+    :return: LFR features of shape (num_output_frames, lfr_m * feature_dim)
     """
     i_left = a - lfr_m // 2
     i_right = b + lfr_m // 2 + 1
@@ -182,18 +191,19 @@ class SenseVoiceStreamingASR:
                 self.on_event(StreamingASREventType.SPEECH_START, "")
 
         # Handle ASR inference if speech is active
+        ctc_token_ids_updated = False
         if self.asr_state.is_speech_active():
-            decoded_text = self._run_asr_inference_if_needed(force_run=speech_ended)
-            if decoded_text is not None:
-                if decoded_text != self.asr_state.last_decoded_text:
-                    self.asr_state.last_decoded_text = decoded_text
-                    self.on_event(StreamingASREventType.PARTIAL_RESULT, decoded_text)
+            ctc_token_ids = self._run_asr_inference_if_needed(force_run=speech_ended)
+            if ctc_token_ids is not None:
+                self.asr_state.last_ctc_token_ids = ctc_token_ids
+                ctc_token_ids_updated = True
+
+        # Decode token and publish result
+        if ctc_token_ids_updated or speech_ended:
+            self._process_and_publish_results(speech_ended)
 
         # Handle VAD end detection
         if speech_ended:
-            self.on_event(
-                StreamingASREventType.FINAL_RESULT, self.asr_state.last_decoded_text
-            )
             self.on_event(StreamingASREventType.SPEECH_END, "")
             self.asr_state.end_speech()
 
@@ -221,9 +231,6 @@ class SenseVoiceStreamingASR:
 
     def finalize_utterance(self):
         if self.asr_state.is_speech_active():
-            self.on_event(
-                StreamingASREventType.FINAL_RESULT, self.asr_state.last_decoded_text
-            )
             self.on_event(StreamingASREventType.SPEECH_END, "")
             self.asr_state.end_speech()
 
@@ -237,8 +244,10 @@ class SenseVoiceStreamingASR:
         if vad_feat_i_max >= vad_feat_i_min:
             self._run_vad_inference(vad_feat_i_min, vad_feat_i_max)
 
-    def _run_asr_inference_if_needed(self, force_run=False) -> Optional[str]:
-        """Run ASR inference if conditions are met. Returns (decoded_text) or None."""
+    def _run_asr_inference_if_needed(
+        self, force_run=False
+    ) -> Optional[NDArray[np.int32]]:
+        """Run ASR inference if conditions are met. Return ctc_token_ids or None."""
         if not self.asr_state.is_speech_active():
             return None
         assert self.asr_state.start_frame_idx is not None
@@ -249,8 +258,7 @@ class SenseVoiceStreamingASR:
 
             if force_run or self._should_update_asr_result(asr_i_min, asr_i_max):
                 self.asr_state.last_processed_frame = asr_i_max
-                decoded_text = self._run_asr_inference(asr_i_min, asr_i_max)
-                return decoded_text
+                return self._run_asr_inference(asr_i_min, asr_i_max)
 
             return None
         except Exception as e:
@@ -304,17 +312,17 @@ class SenseVoiceStreamingASR:
             self.fbank_feature_buffer.append(self.fbank.get_frame(i))
         self.fbank.pop(pop_count)
 
-    def _text_norm(self):
+    def _text_norm(self, frame_count):
         ITN_TOKEN = 14
         NO_ITN_TOKEN = 15
-        if self.config.itn_min_length < 0:
+        if self.config.itn_min_speech_time_ms < 0:
             return np.array([NO_ITN_TOKEN])
-        if self.config.itn_min_length == 0:
+        if self.config.itn_min_speech_time_ms == 0:
             return np.array([ITN_TOKEN])
-        enable_itn = len(self.asr_state.last_decoded_text) > self.config.itn_min_length
+        enable_itn = frame_count > self.ms_to_frames(self.config.itn_min_speech_time_ms)
         return np.array([ITN_TOKEN if enable_itn else NO_ITN_TOKEN], dtype=np.int32)
 
-    def _run_asr_inference(self, start_frame: int, end_frame: int) -> str:
+    def _run_asr_inference(self, start_frame: int, end_frame: int) -> NDArray[np.int32]:
         """Run ASR on [start_frame, end_frame], return decoded text."""
         asr_lfr_feat = _range_lfr(
             self.fbank_feature_buffer,
@@ -328,15 +336,76 @@ class SenseVoiceStreamingASR:
             "speech": np.expand_dims(asr_feat, axis=0),
             "speech_lengths": np.array([asr_feat.shape[0]], dtype=np.int32),
             "language": self.lang_token_np,
-            "textnorm": self._text_norm(),
+            "textnorm": self._text_norm(end_frame - start_frame),
         }
         logits, _ = self.asr_model.model_inference_session.run(None, input_feed)
         # logits shape: [1, 4 + T, vocab_size], where T = speech_length
         # First 4 output positions are reserved for special tokens: <LID>, <SER>, <AED>, <ITN>
         assert isinstance(logits, np.ndarray)
         ctc_token_ids = np.argmax(logits, axis=-1)  # [1, 4 + T]
-        decoded = self.asr_model.ctc_tokens_to_text(ctc_token_ids[0])
-        return decoded
+        return ctc_token_ids[:, 4:].squeeze()
+
+    def _process_and_publish_results(self, speech_ended: bool) -> None:
+        """Process CTC tokens and publish final/partial results.
+
+        Args:
+            speech_ended: Whether speech has ended (affects mutable token count)
+        """
+        mutable_token_num = self.config.asr_mutable_suffix_token_num
+        if speech_ended:
+            mutable_token_num = 0
+        # Special handling:
+        # We treat all tokens as mutable until the speech duration exceeds `itn_min_speech_time_ms`.
+        # This ensures short fragments without ITN and can be revised if speech continues.
+        if (
+            self.config.itn_min_speech_time_ms > 0
+            and not speech_ended
+            and self.asr_state.last_processed_frame
+            - (self.asr_state.start_frame_idx or 0)
+            < self.ms_to_frames(self.config.itn_min_speech_time_ms)
+        ):
+            mutable_token_num = len(self.asr_state.last_ctc_token_ids)
+
+        # Calculate immutable token range
+        immutable_start_idx = self.asr_state.last_immutable_ctc_token_idx + 1
+        immutable_end_idx = max(
+            len(self.asr_state.last_ctc_token_ids) - mutable_token_num,
+            immutable_start_idx,
+        )
+
+        # Update state and publish final result
+        if immutable_start_idx < immutable_end_idx:
+            final_text = self._decode_tokens_to_text(
+                immutable_start_idx, immutable_end_idx
+            )
+            self.on_event(StreamingASREventType.FINAL_RESULT, final_text)
+            self.asr_state.last_immutable_ctc_token_idx = immutable_end_idx
+
+        # Publish partial result for mutable tokens
+        partial_text = self._decode_tokens_to_text(
+            immutable_end_idx, len(self.asr_state.last_ctc_token_ids)
+        )
+        self.on_event(StreamingASREventType.PARTIAL_RESULT, partial_text)
+
+    def _decode_tokens_to_text(self, start_idx: int, end_idx: int) -> str:
+        """Decode token IDs to text using CTC decoding.
+
+        Args:
+            start_idx: Start index of tokens to decode (inclusive)
+            end_idx: End index of tokens to decode (exclusive)
+
+        Returns:
+            Decoded text string
+        """
+        if start_idx >= end_idx:
+            return ""
+
+        prev_token_id = None
+        if start_idx > 0:
+            prev_token_id = self.asr_state.last_ctc_token_ids[start_idx - 1]
+
+        token_ids = self.asr_state.last_ctc_token_ids[start_idx:end_idx]
+        return self.asr_model.ctc_tokens_to_text(token_ids, prev_token_id)
 
     def _run_vad_inference(
         self, start_frame: int, end_frame: int
