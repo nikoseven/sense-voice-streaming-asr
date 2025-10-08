@@ -112,10 +112,6 @@ class SenseVoiceStreamingASR:
     ASR_FRAME_RATE = 100  # Hz
     MS_PER_FRAME = 10
 
-    @property
-    def frames_per_ms(self) -> float:
-        return 0.1  # 10ms per frame
-
     def ms_to_frames(self, ms: int) -> int:
         return ms // self.MS_PER_FRAME
 
@@ -151,7 +147,7 @@ class SenseVoiceStreamingASR:
         self.speech_prob_buffer = RollingBuffer(
             (),
             "float32",
-            capacity=self.config.buffer_duration_sec * self.ASR_FRAME_RATE,
+            capacity=self.ASR_FRAME_RATE * self.config.buffer_duration_sec,
         )
 
         lang = self.config.lang
