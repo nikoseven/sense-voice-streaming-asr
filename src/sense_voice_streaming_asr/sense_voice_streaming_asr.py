@@ -323,15 +323,19 @@ class SenseVoiceStreamingASR:
             self.asr_model.lfr_m,
             self.asr_model.lfr_n,
         )
-        asr_feat = apply_cmvn(asr_lfr_feat, self.asr_model.cmvn)
+        asr_feat = apply_cmvn(asr_lfr_feat, self.asr_model.cmvn)  # [speech_length, 560]
         input_feed = {
             "speech": np.expand_dims(asr_feat, axis=0),
             "speech_lengths": np.array([asr_feat.shape[0]], dtype=np.int32),
             "language": self.lang_token_np,
             "textnorm": self._text_norm(),
         }
-        logits = self.asr_model.model_inference_session.run(None, input_feed)[0]
-        decoded = self.asr_model.decode(logits)[0]
+        logits, _ = self.asr_model.model_inference_session.run(None, input_feed)
+        # logits shape: [1, 4 + T, vocab_size], where T = speech_length
+        # First 4 output positions are reserved for special tokens: <LID>, <SER>, <AED>, <ITN>
+        assert isinstance(logits, np.ndarray)
+        ctc_token_ids = np.argmax(logits, axis=-1)  # [1, 4 + T]
+        decoded = self.asr_model.ctc_tokens_to_text(ctc_token_ids[0])
         return decoded
 
     def _run_vad_inference(

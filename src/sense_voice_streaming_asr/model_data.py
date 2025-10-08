@@ -85,27 +85,15 @@ class SenseVoiceModel:
             "nospeech": 13,
         }
 
-    def decode(self, logits):
-        """
-        Decodes logits to text with CTC post-processing.
-        Args:
-            logits: A numpy array of shape (batch_size, sequence_length, vocab_size).
-        Returns:
-            A list of decoded strings.
-        """
-        predictions = np.argmax(logits, axis=-1)
-
-        decoded_texts = []
-        for pred in predictions:
-            # Merge repeated tokens
-            merged = [p for i, p in enumerate(pred) if i == 0 or p != pred[i - 1]]
-            parts = []
-            for token_id in merged:
-                if token_id > len(self.sensevoice_tokens):
-                    continue
-                piece = self.sensevoice_tokens[token_id]
-                if not piece.startswith("<|") and piece != "<unk>":
-                    parts.append(piece)
-            # 3. Decode to text
-            decoded_texts.append("".join(parts).replace("▁", " "))
-        return decoded_texts
+    def ctc_tokens_to_text(self, tokens, prev_token_id=None, filter_special_token=True):
+        merged_tokens = []
+        for tok in tokens:
+            if tok == prev_token_id:
+                continue
+            prev_token_id = tok
+            if tok != 0:  # skip <unk>
+                merged_tokens.append(tok)
+        text_pieces = [self.sensevoice_tokens[token_id] for token_id in merged_tokens]
+        if filter_special_token:
+            text_pieces = [t for t in text_pieces if not t.startswith("<|")]
+        return "".join(text_pieces).replace("▁", " ")
