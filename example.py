@@ -37,7 +37,7 @@ def main():
         )
 
         # 3. Initialize the streaming ASR processor
-        config = StreamingASRConfig(itn_min_length=10)
+        config = StreamingASRConfig()
         processor = SenseVoiceStreamingASR(
             asr_model=asr_model,
             vad_model=vad_model,
