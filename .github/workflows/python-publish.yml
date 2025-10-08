@@ -20,7 +20,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install Git LFS
+        run: |
+          git lfs install
+
       - uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          lfs: true
+
+      - name: Pull LFS files for submodules
+        run: |
+          cd src/sense_voice_streaming_asr/models/speech_fsmn_vad_zh-cn-16k-common-onnx
+          git lfs pull
+          cd ../SenseVoiceSmall
+          git lfs pull
 
       - uses: actions/setup-python@v5
         with:
