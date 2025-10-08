@@ -4,18 +4,69 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sense-voice-streaming-asr"
-version = "0.1.0"
-description = "Streaming speech recongnition supporting zh, en, yue, ja, and ko with SenseVoiceSmall."
+version = "0.1.1"
+description = "Real-time streaming automatic speech recognition (ASR) with support for Chinese, English, Cantonese, Japanese, and Korean languages using SenseVoiceSmall model."
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [{name = "nikoseven", email = "nikoseven@outlook.com"}]
+maintainers = [{name = "nikoseven", email = "nikoseven@outlook.com"}]
 
+requires-python = ">=3.8"
 dependencies = [
     "numpy",
     "kaldi_native_fbank",
     "sounddevice",
     "sentencepiece",
 ]
+
+
+keywords = [
+    "speech-recognition",
+    "asr",
+    "streaming",
+    "real-time",
+    "sensevoice",
+    "multilingual",
+    "chinese",
+    "english",
+    "japanese",
+    "korean",
+    "cantonese",
+    "voice-processing",
+    "audio-processing",
+    "artificial-intelligence",
+    "machine-learning"
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+    "Natural Language :: Chinese (Simplified)",
+    "Natural Language :: English",
+    "Natural Language :: Japanese",
+    "Natural Language :: Korean",
+]
+
+[project.urls]
+Homepage = "https://github.com/nikoseven/sense-voice-streaming-asr"
+Repository = "https://github.com/nikoseven/sense-voice-streaming-asr"
+Documentation = "https://github.com/nikoseven/sense-voice-streaming-asr#readme"
+"Bug Tracker" = "https://github.com/nikoseven/sense-voice-streaming-asr/issues" 
 
 [tool.setuptools.packages.find]
 where = ["src"]
