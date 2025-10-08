@@ -175,7 +175,10 @@ class SenseVoiceStreamingASR:
         self._run_vad_inference_if_needed()
 
         # Handle VAD start detection
-        if not self.asr_state.is_speech_active():
+        speech_ended = False
+        if self.asr_state.is_speech_active():
+            speech_ended = self.detect_vad_speech_ended()
+        else:
             if self.detect_vad_speech_start():
                 self.asr_state.start_speech(
                     self.speech_prob_buffer.tail - self.lookback_frames
@@ -183,26 +186,20 @@ class SenseVoiceStreamingASR:
                 self.on_event(StreamingASREventType.SPEECH_START, "")
 
         # Handle ASR inference if speech is active
-        asr_result = None
         if self.asr_state.is_speech_active():
-            asr_result = self._run_asr_inference_if_needed()
-            if asr_result is not None:
-                decoded_text, is_final = asr_result
-                if decoded_text != self.asr_state.last_decoded_text or is_final:
+            decoded_text = self._run_asr_inference_if_needed(force_run=speech_ended)
+            if decoded_text is not None:
+                if decoded_text != self.asr_state.last_decoded_text:
                     self.asr_state.last_decoded_text = decoded_text
-                    event_type = (
-                        StreamingASREventType.FINAL_RESULT
-                        if is_final
-                        else StreamingASREventType.PARTIAL_RESULT
-                    )
-                    self.on_event(event_type, decoded_text)
+                    self.on_event(StreamingASREventType.PARTIAL_RESULT, decoded_text)
 
         # Handle VAD end detection
-        if self.asr_state.is_speech_active():
-            speech_ended = self.detect_vad_speech_ended()
-            if speech_ended:
-                self.on_event(StreamingASREventType.SPEECH_END, "")
-                self.asr_state.end_speech()
+        if speech_ended:
+            self.on_event(
+                StreamingASREventType.FINAL_RESULT, self.asr_state.last_decoded_text
+            )
+            self.on_event(StreamingASREventType.SPEECH_END, "")
+            self.asr_state.end_speech()
 
         self.move_buffer_head()
 
@@ -244,8 +241,8 @@ class SenseVoiceStreamingASR:
         if vad_feat_i_max >= vad_feat_i_min:
             self._run_vad_inference(vad_feat_i_min, vad_feat_i_max)
 
-    def _run_asr_inference_if_needed(self) -> Optional[tuple[str, bool]]:
-        """Run ASR inference if conditions are met. Returns (decoded_text, is_final) or None."""
+    def _run_asr_inference_if_needed(self, force_run=False) -> Optional[str]:
+        """Run ASR inference if conditions are met. Returns (decoded_text) or None."""
         if not self.asr_state.is_speech_active():
             return None
         assert self.asr_state.start_frame_idx is not None
@@ -253,13 +250,11 @@ class SenseVoiceStreamingASR:
         try:
             asr_i_min: int = self.asr_state.start_frame_idx
             asr_i_max = self.fbank_feature_buffer.tail - self.asr_model.lfr_m // 2
-            speech_ended = self.detect_vad_speech_ended()
 
-            if self._should_run_asr(asr_i_min, asr_i_max, speech_ended):
+            if force_run or self._should_update_asr_result(asr_i_min, asr_i_max):
                 self.asr_state.last_processed_frame = asr_i_max
-                decoded = self._run_asr_inference(asr_i_min, asr_i_max, speech_ended)
-                decoded_text = decoded or ""
-                return decoded_text, speech_ended
+                decoded_text = self._run_asr_inference(asr_i_min, asr_i_max)
+                return decoded_text
 
             return None
         except Exception as e:
@@ -267,21 +262,18 @@ class SenseVoiceStreamingASR:
             self.on_event(StreamingASREventType.ERROR, str(e))
             return None
 
-    def _should_run_asr(
-        self, asr_i_min: int, asr_i_max: int, speech_ended: bool
-    ) -> bool:
+    def _should_update_asr_result(self, asr_i_min: int, asr_i_max: int) -> bool:
         """Determine if ASR inference should be run"""
         if asr_i_max < asr_i_min:
             return False
 
-        is_final_result = speech_ended
         is_pending_result = asr_i_max - asr_i_min > self.ms_to_frames(
             self.config.asr_result_trigger_buffer_ms
         ) and asr_i_max - self.asr_state.last_processed_frame > self.ms_to_frames(
             self.config.asr_result_update_interval_ms
         )
 
-        return is_pending_result or is_final_result
+        return is_pending_result
 
     def detect_vad_speech_start(self) -> bool:
         """
@@ -326,9 +318,7 @@ class SenseVoiceStreamingASR:
         enable_itn = len(self.asr_state.last_decoded_text) > self.config.itn_min_length
         return np.array([ITN_TOKEN if enable_itn else NO_ITN_TOKEN], dtype=np.int32)
 
-    def _run_asr_inference(
-        self, start_frame: int, end_frame: int, is_final: bool
-    ) -> Optional[str]:
+    def _run_asr_inference(self, start_frame: int, end_frame: int) -> str:
         """Run ASR on [start_frame, end_frame], return decoded text."""
         asr_lfr_feat = _range_lfr(
             self.fbank_feature_buffer,
