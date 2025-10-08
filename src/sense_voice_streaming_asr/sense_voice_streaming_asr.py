@@ -163,9 +163,7 @@ class SenseVoiceStreamingASR:
         self.vad_cache = [np.zeros((1, 128, 19, 1), dtype=np.float32) for _ in range(4)]
         self.asr_state = ASRState()
 
-    def accept_audio(self, audio: np.ndarray) -> None:
-        """Receives raw audio block (shape: [N,] or [N, 1]), processes it"""
-        audio = np.squeeze(audio)  # ensure 1D
+    def accept_audio(self, audio: np.ndarray[tuple[int], np.dtype[np.float32]]) -> None:
         self.audio_buffer.extend(audio)
         self._extract_features(audio)
         self._run_vad_inference_if_needed()
@@ -304,9 +302,8 @@ class SenseVoiceStreamingASR:
         last_n_probs = self.speech_prob_buffer.get_all()[-persistence_frames:]
         return all(p < self.config.vad_end_threshold for p in last_n_probs)
 
-    def _extract_features(self, audio_frames: np.ndarray):
-        """Accept raw audio, extract and buffer fbank features."""
-        self.fbank.accept_waveform(self.SAMPLE_RATE, np.squeeze(audio_frames).astype(float).tolist())
+    def _extract_features(self, audio: np.ndarray[tuple[int], np.dtype[np.float32]]):
+        self.fbank.accept_waveform(self.SAMPLE_RATE, audio.tolist())
         pop_count = self.fbank.num_frames_ready - self.fbank_feature_buffer.tail
         for i in range(self.fbank_feature_buffer.tail, self.fbank.num_frames_ready):
             self.fbank_feature_buffer.append(self.fbank.get_frame(i))

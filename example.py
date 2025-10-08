@@ -79,8 +79,8 @@ def main():
                     if overflowed:
                         print("Warning: Audio overflow detected")
 
-                    # Feed audio to the processor
-                    processor.accept_audio(np.squeeze(frames))
+                    audio = np.squeeze(frames).astype(np.float32).reshape(-1)
+                    processor.accept_audio(audio)
 
                 # Add small delay to prevent excessive CPU usage
                 sd.sleep(10)
