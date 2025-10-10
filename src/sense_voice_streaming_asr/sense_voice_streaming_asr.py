@@ -80,7 +80,7 @@ class StreamingASRConfig:
     vad_start_threshold: float = 0.7
     vad_end_threshold: float = 0.3
     vad_start_persistence_ms: int = 100
-    vad_end_persistence_ms: int = 500
+    vad_end_persistence_ms: int = 1000
     vad_start_padding_ms: int = 100
     buffer_duration_sec: int = 600
     asr_result_trigger_buffer_ms: int = 1000
@@ -231,6 +231,8 @@ class SenseVoiceStreamingASR:
 
     def finalize_utterance(self):
         if self.asr_state.is_speech_active():
+            # Process and commit the final result with the last recognition result
+            self._process_and_publish_results(speech_ended=True)
             self.on_event(StreamingASREventType.SPEECH_END, "")
             self.asr_state.end_speech()
 
