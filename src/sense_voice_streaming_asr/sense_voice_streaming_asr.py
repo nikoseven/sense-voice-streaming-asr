@@ -57,34 +57,34 @@ class StreamingASRConfig:
     All time values are in milliseconds (ms) unless noted.
 
     Attributes:
-        lang: Language code "zh", "en", "yue", "ja", "ko" or 'auto' for auto-detection. Default: 'auto'.
+        lang: Language code "zh", "en", "yue", "ja", "ko" or 'auto' for auto-detection.
         itn_min_speech_time_ms: Minimum speech duration in milliseconds to enable ITN.
                                 Prevents punctuation from being added to very short utterances (e.g., single words),
                                 If set to 0, ITN is always enabled.
                                 If set to -1, ITN is always disabled.
-                                If set to positive value, ITN is enabled when speech duration >= this value. Default: 2000.
-        vad_start_threshold: VAD threshold to start speech (range: 0–1). Default: 0.7.
-        vad_end_threshold: VAD threshold to end speech (should be < start threshold). Default: 0.3.
-        vad_start_persistence_ms: Min ms above start threshold to trigger speech start. Default: 200.
-        vad_end_persistence_ms: Min ms below end threshold to trigger speech end. Default: 500.
-        vad_start_padding_ms: Audio (ms) to include before detected speech start. Default: 200.
-        buffer_duration_sec: Max buffer duration in seconds (limits memory). Default: 600.
-        asr_result_trigger_buffer_ms: Min speech length (ms) before first partial result. Default: 1000.
-        asr_result_update_interval_ms: Min interval (ms) between partial results. Default: 500.
+                                If set to positive value, ITN is enabled when speech duration >= this value.
+        vad_start_threshold: VAD threshold to start speech (range: 0–1).
+        vad_start_persistence_ms: Min ms above start threshold to trigger speech start.
+        vad_end_threshold: VAD threshold to end speech (should be < start threshold).
+        vad_end_persistence_ms: Min ms below end threshold to trigger speech end.
+        vad_start_padding_ms: Audio (ms) to include before detected speech start.
+        buffer_duration_sec: Max buffer duration in seconds (limits memory).
+        asr_result_trigger_buffer_ms: Min speech length (ms) before first partial result.
+        asr_result_update_interval_ms: Min interval (ms) between partial results.
     """
 
     lang: str = "auto"
     itn_min_speech_time_ms: int = (
         2000  # -1: no ITN; 0, ITN; >0: enable ITN if speech duration exceeded
     )
-    vad_start_threshold: float = 0.7
-    vad_end_threshold: float = 0.3
+    vad_start_threshold: float = 0.8
     vad_start_persistence_ms: int = 100
-    vad_end_persistence_ms: int = 1000
-    vad_start_padding_ms: int = 100
+    vad_end_threshold: float = 0.3
+    vad_end_persistence_ms: int = 300
+    vad_start_padding_ms: int = 180
     buffer_duration_sec: int = 600
-    asr_result_trigger_buffer_ms: int = 1000
-    asr_result_update_interval_ms: int = 500
+    asr_result_trigger_buffer_ms: int = 180
+    asr_result_update_interval_ms: int = 180
     asr_mutable_suffix_token_num: int = 100000  # 1 token == 60ms
 
 
