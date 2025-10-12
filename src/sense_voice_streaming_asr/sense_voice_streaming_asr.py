@@ -318,9 +318,9 @@ class SenseVoiceStreamingASR:
         ITN_TOKEN = 14
         NO_ITN_TOKEN = 15
         if self.config.itn_min_speech_time_ms < 0:
-            return np.array([NO_ITN_TOKEN])
+            return np.array([NO_ITN_TOKEN], dtype=np.int32)
         if self.config.itn_min_speech_time_ms == 0:
-            return np.array([ITN_TOKEN])
+            return np.array([ITN_TOKEN], dtype=np.int32)
         enable_itn = frame_count > self.ms_to_frames(self.config.itn_min_speech_time_ms)
         return np.array([ITN_TOKEN if enable_itn else NO_ITN_TOKEN], dtype=np.int32)
 
@@ -337,8 +337,8 @@ class SenseVoiceStreamingASR:
         input_feed = {
             "speech": np.expand_dims(asr_feat, axis=0),
             "speech_lengths": np.array([asr_feat.shape[0]], dtype=np.int32),
-            "language": self.lang_token_np,
-            "textnorm": self._text_norm(end_frame - start_frame),
+            "language": self.lang_token_np.astype(np.int32),
+            "textnorm": self._text_norm(end_frame - start_frame).astype(np.int32),
         }
         logits, _ = self.asr_model.model_inference_session.run(None, input_feed)
         # logits shape: [1, 4 + T, vocab_size], where T = speech_length
