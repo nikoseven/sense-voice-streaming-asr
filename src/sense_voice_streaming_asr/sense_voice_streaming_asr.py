@@ -80,7 +80,7 @@ class StreamingASRConfig:
     vad_start_threshold: float = 0.8
     vad_start_persistence_ms: int = 100
     vad_end_threshold: float = 0.3
-    vad_end_persistence_ms: int = 300
+    vad_end_persistence_ms: int = 100
     vad_start_padding_ms: int = 180
     buffer_duration_sec: int = 600
     asr_result_trigger_buffer_ms: int = 180
