@@ -67,6 +67,8 @@ class StreamingASRConfig:
         vad_start_persistence_ms: Min ms above start threshold to trigger speech start.
         vad_end_threshold: VAD threshold to end speech (should be < start threshold).
         vad_end_persistence_ms: Min ms below end threshold to trigger speech end.
+        vad_provisional_end_threshold: VAD threshold to trigger a partial result (should be < start threshold and > end threshold).
+        vad_provisional_end_persistence_ms: Min ms below provisional end threshold to trigger a partial result.
         vad_start_padding_ms: Audio (ms) to include before detected speech start.
         buffer_duration_sec: Max buffer duration in seconds (limits memory).
         asr_result_trigger_buffer_ms: Min speech length (ms) before first partial result.
@@ -80,11 +82,13 @@ class StreamingASRConfig:
     vad_start_threshold: float = 0.8
     vad_start_persistence_ms: int = 100
     vad_end_threshold: float = 0.3
-    vad_end_persistence_ms: int = 100
+    vad_end_persistence_ms: int = 1000
+    vad_provisional_end_threshold: float = 0.5
+    vad_provisional_end_persistence_ms: int = 50
     vad_start_padding_ms: int = 180
     buffer_duration_sec: int = 600
     asr_result_trigger_buffer_ms: int = 180
-    asr_result_update_interval_ms: int = 180
+    asr_result_update_interval_ms: int = 1000
     asr_mutable_suffix_token_num: int = 100000  # 1 token == 60ms
 
 
@@ -181,8 +185,11 @@ class SenseVoiceStreamingASR:
 
         # Handle VAD start detection
         speech_ended = False
+        provisional_speech_ended = False
         if self.asr_state.is_speech_active():
             speech_ended = self.detect_vad_speech_ended()
+            if not speech_ended:
+                provisional_speech_ended = self.detect_vad_speech_provisional_ended()
         else:
             if self.detect_vad_speech_start():
                 self.asr_state.start_speech(
@@ -193,13 +200,15 @@ class SenseVoiceStreamingASR:
         # Handle ASR inference if speech is active
         ctc_token_ids_updated = False
         if self.asr_state.is_speech_active():
-            ctc_token_ids = self._run_asr_inference_if_needed(force_run=speech_ended)
+            ctc_token_ids = self._run_asr_inference_if_needed(
+                force_run=speech_ended or provisional_speech_ended
+            )
             if ctc_token_ids is not None:
                 self.asr_state.last_ctc_token_ids = ctc_token_ids
                 ctc_token_ids_updated = True
 
         # Decode token and publish result
-        if ctc_token_ids_updated or speech_ended:
+        if ctc_token_ids_updated or provisional_speech_ended or speech_ended:
             self._process_and_publish_results(speech_ended)
 
         # Handle VAD end detection
@@ -306,6 +315,21 @@ class SenseVoiceStreamingASR:
             return False
         last_n_probs = self.speech_prob_buffer.get_all()[-persistence_frames:]
         return all(p < self.config.vad_end_threshold for p in last_n_probs)
+
+    def detect_vad_speech_provisional_ended(self) -> bool:
+        """
+        Detect if speech has provisionally ended based on VAD probabilities.
+
+        Returns:
+            bool: True if speech should trigger a partial result, False otherwise
+        """
+        persistence_frames = self.ms_to_frames(
+            self.config.vad_provisional_end_persistence_ms
+        )
+        if self.speech_prob_buffer.count < persistence_frames:
+            return False
+        last_n_probs = self.speech_prob_buffer.get_all()[-persistence_frames:]
+        return all(p < self.config.vad_provisional_end_threshold for p in last_n_probs)
 
     def _extract_features(self, audio: np.ndarray[tuple[int], np.dtype[np.float32]]):
         self.fbank.accept_waveform(self.SAMPLE_RATE, audio.tolist())
