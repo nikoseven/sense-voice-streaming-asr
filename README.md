@@ -18,7 +18,7 @@ A lightweight, real-time streaming speech recognition engine powered by SenseVoi
 ## 🚀 Installation
 
 ```bash
-pip install sense-voice-streaming-asr
+pip install git+https://github.com/nikoseven/sense-voice-streaming-asr.git
 ```
 
 > Requires Python ≥ 3.8.
@@ -26,8 +26,6 @@ pip install sense-voice-streaming-asr
 
 
 ## 🛠️ Development
-
-To install in development mode:
 
 ```bash
 git clone https://github.com/nikoseven/sense-voice-streaming-asr.git
