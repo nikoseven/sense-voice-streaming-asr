@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sense-voice-streaming-asr"
-version = "0.2.2"
+version = "0.2.3"
 description = "Real-time streaming automatic speech recognition (ASR) with support for Chinese, English, Cantonese, Japanese, and Korean languages using SenseVoiceSmall model."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -16,7 +16,6 @@ dependencies = [
     "numpy",
     "kaldi_native_fbank",
     "sounddevice",
-    "sentencepiece",
 ]
 
 
