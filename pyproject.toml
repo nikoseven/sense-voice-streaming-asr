@@ -16,6 +16,7 @@ dependencies = [
     "numpy",
     "kaldi_native_fbank",
     "sounddevice",
+    "onnxruntime",
 ]
 
 
